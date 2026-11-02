@@ -61,7 +61,8 @@ static NSString *arrangeWindow(EdgeAction action) {
     }
     if (!screen) { CFRelease(window); return @"No display available."; }
     CGRect target = accessibilityRect(screen.visibleFrame);
-    if (action == ActionAlmostMaximize) target = CGRectInset(target, 12, 12);
+    if (action == ActionAlmostMaximize)
+        target = CGRectInset(target, target.size.width * 0.05, target.size.height * 0.05);
     else {
         CGFloat leftWidth = floor(target.size.width / 2);
         if (action == ActionRight) {
@@ -85,7 +86,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     if (sizeError != kAXErrorSuccess || positionError != kAXErrorSuccess || !matches)
         return @"This app restricted the requested window placement.";
     return action == ActionLeft ? @"Moved to left half" :
-           action == ActionRight ? @"Moved to right half" : @"Almost maximized (12 pt margin)";
+           action == ActionRight ? @"Moved to right half" : @"Almost maximized (90% of usable screen)";
 }
 
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>

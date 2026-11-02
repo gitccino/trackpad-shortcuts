@@ -8,7 +8,7 @@ account, or background service.
 
 - Left edge → left half of the window's current display.
 - Right edge → right half.
-- Bottom edge → almost maximize, with a 12-point margin inside the usable screen.
+- Bottom edge → almost maximize, centered at 90% of the usable screen's width and height.
 
 The usable screen excludes the menu bar and Dock. Almost maximize keeps the
 window in the current desktop rather than entering macOS fullscreen.
@@ -48,7 +48,7 @@ device change; the app also reconnects after sleep. This MVP uses the system's
 default trackpad, one device at a time. Test with the built-in trackpad first.
 
 Useful observations during your trial: accidental activations, missed gestures,
-whether the bottom edge is comfortable, and whether the 12-point margin feels
+whether the bottom edge is comfortable, and whether the centered 90% size feels
 right. Keep the mode fixed for a session so the observations are easier to judge.
 
 ## Live trackpad diagnostics
