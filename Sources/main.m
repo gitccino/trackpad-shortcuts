@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import "Trackpad.h"
+#import "Diagnostics.h"
 #include <math.h>
 
 static BOOL accessibilityGranted(BOOL prompt) {
@@ -95,6 +96,8 @@ static NSString *arrangeWindow(EdgeAction action) {
 @property(nonatomic, strong) NSMenuItem *tap;
 @property(nonatomic, strong) NSMenuItem *swipe;
 @property(nonatomic) BOOL available;
+@property(nonatomic, strong) Diagnostics *diagnostics;
+@property(nonatomic, strong) NSMenuItem *observe;
 @end
 
 @implementation AppDelegate
@@ -110,7 +113,20 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.trackpad.mode = [NSUserDefaults.standardUserDefaults integerForKey:@"gestureMode"] == ModeSwipe ? ModeSwipe : ModeTap;
     __weak AppDelegate *weakSelf = self;
     self.trackpad.onAction = ^(EdgeAction action) {
-        weakSelf.status.title = arrangeWindow(action);
+        AppDelegate *owner = weakSelf;
+        if (owner.diagnostics.window.visible && owner.diagnostics.observeOnly) {
+            owner.status.title = @"Gesture recognized — diagnostics is observing only";
+            return;
+        }
+        NSString *result = arrangeWindow(action);
+        owner.status.title = result;
+        if (owner.diagnostics.window.visible) [owner.diagnostics record:result];
+    };
+    self.trackpad.onFrame = ^(NSArray<NSDictionary<NSString *, NSNumber *> *> *touches) {
+        [weakSelf.diagnostics updateTouches:touches];
+    };
+    self.trackpad.onFeedback = ^(NSString *feedback) {
+        if (weakSelf.diagnostics.window.visible) [weakSelf.diagnostics record:feedback];
     };
     self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.button.image = [NSImage imageWithSystemSymbolName:@"rectangle.split.2x1" accessibilityDescription:@"Trackpad Shortcuts"];
@@ -132,6 +148,10 @@ static NSString *arrangeWindow(EdgeAction action) {
     [menu addItem:NSMenuItem.separatorItem];
     [self item:@"Grant Accessibility Access…" action:@selector(grantAccess:) menu:menu];
     [self item:@"Reconnect Trackpad" action:@selector(reconnect:) menu:menu];
+    [menu addItem:NSMenuItem.separatorItem];
+    [self item:@"Open Trackpad Diagnostics…" action:@selector(showDiagnostics:) menu:menu];
+    self.observe = [self item:@"Observe Only in Diagnostics" action:@selector(toggleObserve:) menu:menu];
+    [menu addItem:NSMenuItem.separatorItem];
     [self item:@"Quit" action:@selector(quit:) menu:menu].keyEquivalent = @"q";
     self.statusItem.menu = menu;
     [self reconnect:nil];
@@ -146,6 +166,8 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.tap.state = self.trackpad.mode == ModeTap ? NSControlStateValueOn : NSControlStateValueOff;
     self.swipe.state = self.trackpad.mode == ModeSwipe ? NSControlStateValueOn : NSControlStateValueOff;
     self.pause.title = self.trackpad.enabled ? @"Pause" : @"Resume";
+    self.observe.state = !self.diagnostics || self.diagnostics.observeOnly ? NSControlStateValueOn : NSControlStateValueOff;
+    self.observe.enabled = self.diagnostics.window.visible;
 }
 - (void)selectTap:(id)sender { (void)sender; [self setGestureMode:ModeTap]; }
 - (void)selectSwipe:(id)sender { (void)sender; [self setGestureMode:ModeSwipe]; }
@@ -153,25 +175,62 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.trackpad.mode = mode;
     [NSUserDefaults.standardUserDefaults setInteger:mode forKey:@"gestureMode"];
     self.status.title = mode == ModeTap ? @"Tap mode enabled" : @"Inward swipe mode enabled";
+    [self refreshDiagnostics];
+    if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
 }
 - (void)togglePause:(id)sender {
     (void)sender;
     self.trackpad.enabled = !self.trackpad.enabled;
     self.status.title = self.trackpad.enabled ? @"Listening for edge gestures" : @"Paused";
     self.statusItem.button.appearsDisabled = !self.trackpad.enabled;
+    [self refreshDiagnostics];
+    if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
 }
 - (void)grantAccess:(id)sender {
     (void)sender;
     accessibilityGranted(YES);
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
 }
-- (void)willSleep:(NSNotification *)notification { (void)notification; [self.trackpad stop]; }
+- (void)willSleep:(NSNotification *)notification {
+    (void)notification;
+    [self.trackpad stop];
+    self.available = NO;
+    [self refreshDiagnostics];
+}
 - (void)reconnect:(id)sender {
     (void)sender;
     [self.trackpad stop];
     self.available = [self.trackpad start];
     self.status.title = !self.available ? @"Trackpad unavailable — try Reconnect Trackpad" :
         self.trackpad.enabled ? @"Listening for edge gestures" : @"Paused";
+    [self refreshDiagnostics];
+    if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
+}
+- (void)refreshDiagnostics {
+    [self.diagnostics setMode:self.trackpad.mode enabled:self.trackpad.enabled available:self.available];
+}
+- (void)showDiagnostics:(id)sender {
+    (void)sender;
+    if (!self.diagnostics) {
+        self.diagnostics = [Diagnostics new];
+        __weak AppDelegate *weakSelf = self;
+        self.diagnostics.onClose = ^{
+            Trackpad *trackpad = weakSelf.trackpad;
+            trackpad.mode = trackpad.mode;
+        };
+    }
+    self.trackpad.mode = self.trackpad.mode;
+    [self refreshDiagnostics];
+    [self.diagnostics show];
+    [self.diagnostics record:@"Touch the physical trackpad. Close this window to resume normal window actions."];
+}
+- (void)toggleObserve:(id)sender {
+    (void)sender;
+    self.diagnostics.observeOnly = !self.diagnostics.observeOnly;
+    // Cancel any gesture spanning the change in action behavior.
+    self.trackpad.mode = self.trackpad.mode;
+    [self refreshDiagnostics];
+    [self.diagnostics record:self.diagnostics.observeOnly ? @"Observe only — window actions suppressed" : @"Window actions enabled"];
 }
 - (void)quit:(id)sender { (void)sender; [NSApp terminate:nil]; }
 - (void)applicationWillTerminate:(NSNotification *)notification {

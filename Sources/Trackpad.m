@@ -34,7 +34,7 @@ static __weak Trackpad *activeTrackpad;
     double _lastX, _lastY;
     NSUInteger _generation;
 }
-- (void)consumeCount:(int)count identifier:(int)identifier x:(double)x y:(double)y
+- (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
                 time:(double)time generation:(NSUInteger)generation;
 - (NSUInteger)generation;
 @end
@@ -46,20 +46,18 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         Trackpad *trackpad = activeTrackpad;
         if (!trackpad) return;
         // Copy scalar values before returning: the framework owns the buffer.
-        int touching = 0, identifier = 0;
-        double x = 0, y = 0;
+        NSMutableArray *samples = [NSMutableArray array];
         for (size_t i = 0; i < count; i++) {
             if (contacts[i].state == 3 || contacts[i].state == 4) {
-                touching++;
-                identifier = contacts[i].identifier;
-                x = contacts[i].normalized.position.x;
-                y = contacts[i].normalized.position.y;
+                [samples addObject:@{ @"id": @(contacts[i].identifier),
+                    @"x": @(contacts[i].normalized.position.x),
+                    @"y": @(contacts[i].normalized.position.y), @"state": @(contacts[i].state) }];
             }
         }
         NSUInteger generation = [trackpad generation];
+        NSArray *snapshot = [samples copy];
         dispatch_async(dispatch_get_main_queue(), ^{
-            [trackpad consumeCount:touching identifier:identifier x:x y:y
-                             time:timestamp generation:generation];
+            [trackpad consumeTouches:snapshot time:timestamp generation:generation];
         });
     }
 }
@@ -100,23 +98,42 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         _device = NULL;
     }
     _gesture = (Gesture){0};
+    if (self.onFrame) self.onFrame(@[]);
 }
 - (void)setEnabled:(BOOL)enabled {
     _enabled = enabled;
     // Require a fresh all-fingers-up frame after any toggle.
-    _gesture = (Gesture){ .blocked = true };
+    _gesture = (Gesture){ .blocked = true, .feedback = FeedbackWaitingForLift };
 }
 - (void)setMode:(GestureMode)mode {
     _mode = mode;
-    _gesture = (Gesture){ .blocked = true };
+    _gesture = (Gesture){ .blocked = true, .feedback = FeedbackWaitingForLift };
 }
-- (void)consumeCount:(int)count identifier:(int)identifier x:(double)x y:(double)y
+- (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
                 time:(double)time generation:(NSUInteger)generation {
-    if (generation != _generation || !_enabled || !_device) return;
+    if (generation != _generation || !_device) return;
+    if (self.onFrame) self.onFrame(touches);
+    if (!_enabled) return;
+    int count = (int)touches.count;
+    NSDictionary *touch = touches.firstObject;
+    int identifier = [touch[@"id"] intValue];
+    double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
     if (count == 1) { _lastX = x; _lastY = y; }
+    Gesture before = _gesture;
     EdgeAction action = gestureUpdate(&_gesture, _mode, count, identifier,
                                      count == 0 ? _lastX : x,
                                      count == 0 ? _lastY : y, time);
+    if (count == 0 && (before.tracking || before.blocked) && self.onFeedback) {
+        NSString *reason = [NSString stringWithUTF8String:gestureFeedbackText(_gesture.feedback)];
+        NSString *name = action == ActionLeft ? @"Left half" : action == ActionRight ? @"Right half" : @"Almost maximize";
+        NSString *summary = action == ActionNone ? reason : [NSString stringWithFormat:@"Recognized: %@", name];
+        if (before.tracking) {
+            summary = [summary stringByAppendingFormat:@" · %.0f ms · start %.1f%%, %.1f%% → end %.1f%%, %.1f%%",
+                (time - before.started) * 1000, before.startX * 100, before.startY * 100,
+                _lastX * 100, _lastY * 100];
+        }
+        self.onFeedback(summary);
+    }
     if (action != ActionNone && self.onAction) self.onAction(action);
 }
 @end

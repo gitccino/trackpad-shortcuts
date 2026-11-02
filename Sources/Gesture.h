@@ -4,12 +4,23 @@
 
 typedef enum { ActionNone, ActionLeft, ActionRight, ActionAlmostMaximize } EdgeAction;
 typedef enum { ModeTap, ModeSwipe } GestureMode;
+typedef enum {
+    FeedbackNone, FeedbackRecognized, FeedbackOutsideEdge, FeedbackMultipleFingers,
+    FeedbackInvalidPosition, FeedbackContactChanged, FeedbackTooBrief,
+    FeedbackTooLong, FeedbackTapMoved, FeedbackSwipeShort, FeedbackWrongDirection,
+    FeedbackSidewaysDrift, FeedbackWaitingForLift
+} GestureFeedback;
+enum { EdgeWidthPercent = 7, EdgeCornerPercent = 15 };
 typedef struct {
     bool tracking, blocked;
     int identifier;
     double startX, startY, started, maxDistance;
     EdgeAction edge;
+    GestureFeedback feedback;
 } Gesture;
+
+EdgeAction gestureEdgeAt(double x, double y);
+const char *gestureFeedbackText(GestureFeedback feedback);
 
 // Coordinates are normalized, with (0, 0) at the trackpad's bottom left.
 // A zero-contact frame ends the sequence; multiple contacts cancel until all lift.

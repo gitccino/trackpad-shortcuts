@@ -51,6 +51,44 @@ Useful observations during your trial: accidental activations, missed gestures,
 whether the bottom edge is comfortable, and whether the 12-point margin feels
 right. Keep the mode fixed for a session so the observations are easier to judge.
 
+## Live trackpad diagnostics
+
+Choose **Open Trackpad Diagnostics…** from the menu bar icon. The floating
+window shows a trackpad with the exact active strips, a dot for every touching
+finger, finger IDs, normalized coordinates, and the last movement paths. The
+small hollow circle marks the start of a path. Corners remain inactive.
+
+The window does not take keyboard focus away from your target app. While it is
+open, **Observe Only in Diagnostics** is enabled by default: gestures are still
+recognized and explained, but window actions are suppressed. Turn that option
+off to test actual placement while watching the view. Closing the diagnostic
+window resumes normal actions, subject to the app's Pause setting. Changing this
+option or opening/closing the window cancels the gesture currently in progress.
+
+Recent events show recognition or the actual rejection reason from the same
+recognizer used for window actions: inactive starting position, multiple fingers,
+short/long touch, excessive movement, wrong direction, short swipe, or sideways
+drift. Completed gestures include duration and start/end coordinates. An action
+that was recognized can still fail at the Accessibility stage; that result is
+shown separately when window actions are enabled.
+
+Raw finger positions continue to display while **Pause** is enabled, although
+gesture recognition is paused. If the trackpad cannot start, the window reports
+that instead. The recent event list is limited to six entries, and paths are
+bounded in memory. Nothing is recorded to disk or transmitted.
+
+A pink ring marks a mouse-down event within 150 ms of a sampled touch, near the
+most recent finger position. This is approximate: macOS mouse events do not
+identify which touch/device caused the click. Tap-to-click can arrive after lift,
+and an external mouse click can also correlate with a finger resting on the
+trackpad. Click monitoring does not consume or block events. Accessibility access
+may be required for clicks outside the app to appear.
+
+To investigate a miss, first check whether the finger dot appears. Then check
+whether its starting point is in the colored strip, and read the last rejection
+reason. A recognized gesture followed by an action error points to permissions
+or window constraints rather than edge detection.
+
 ## Current limits
 
 - Absolute touch coordinates come from Apple's undocumented
@@ -65,7 +103,7 @@ right. Keep the mode fixed for a session so the observations are easier to judge
   menu reports rejected or constrained placement. macOS fullscreen windows are
   left alone; exit fullscreen before arranging them.
 - Local ad hoc signing only; no App Store packaging, notarization, auto-update,
-  launch at login, custom bindings, gesture overlay, or cursor locking.
+  launch at login, custom bindings, or cursor locking.
 
 ## Validation
 
