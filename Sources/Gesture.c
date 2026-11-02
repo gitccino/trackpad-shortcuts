@@ -24,7 +24,7 @@ const char *gestureFeedbackText(GestureFeedback feedback) {
         case FeedbackOutsideEdge: return "Started outside an active edge (corners are inactive)";
         case FeedbackMultipleFingers: return "Multiple fingers detected; lift all fingers and retry";
         case FeedbackInvalidPosition: return "Invalid touch coordinates received";
-        case FeedbackContactChanged: return "Finger identity changed before lift";
+        case FeedbackContactChanged: return "Contact path changed before lift";
         case FeedbackTooBrief: return "Touch shorter than 35 ms";
         case FeedbackTooLong: return "Touch held too long for the selected gesture mode";
         case FeedbackTapMoved: return "Tap moved more than 2.5%";

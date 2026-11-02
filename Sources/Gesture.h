@@ -26,6 +26,7 @@ const char *gestureFeedbackText(GestureFeedback feedback);
 
 // Coordinates are normalized, with (0, 0) at the trackpad's bottom left.
 // A zero-contact frame ends the sequence; multiple contacts cancel until all lift.
+// identifier must be the stable contact path, not the mutable raw id field.
 EdgeAction gestureUpdate(Gesture *g, GestureMode mode, int count, int identifier,
                          double x, double y, double time);
 #endif

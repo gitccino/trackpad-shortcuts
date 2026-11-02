@@ -100,7 +100,7 @@
         [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(point.x - 24, point.y - 24, 48, 48)] fill];
         [[color colorWithAlphaComponent:0.8] setFill];
         [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(point.x - 10, point.y - 10, 20, 20)] fill];
-        NSString *label = [NSString stringWithFormat:@"#%@  x %.1f%%  y %.1f%%", touch[@"id"], x * 100, y * 100];
+        NSString *label = [NSString stringWithFormat:@"#%@  x %.1f%%  y %.1f%%", touch[@"path"], x * 100, y * 100];
         CGFloat labelX = fmin(fmax(point.x - 65, NSMinX(pad) + 8), NSMaxX(pad) - 190);
         CGFloat labelY = point.y > NSMaxY(pad) - 50 ? point.y - 36 : point.y + 24;
         [self text:label rect:NSMakeRect(labelX, labelY, 185, 20) size:11 color:NSColor.labelColor];
@@ -198,7 +198,8 @@
             @"app_version": info[@"CFBundleShortVersionString"] ?: @"unknown",
             @"build_revision": info[@"TrackpadBuildRevision"] ?: @"unknown",
             @"macos": NSProcessInfo.processInfo.operatingSystemVersionString,
-            @"algorithm": @"edge-v1", @"coordinate_origin": @"bottom_left", @"recognizer_touch_states": @[@3, @4],
+            @"algorithm": @"edge-v2-contact-path", @"contact_identity": @"path",
+            @"coordinate_origin": @"bottom_left", @"recognizer_touch_states": @[@3, @4],
             @"edge_width_percent": @(EdgeWidthPercent), @"corner_exclusion_percent": @(EdgeCornerPercent),
             @"thresholds": @{ @"min_duration_seconds": @(GestureMinDuration), @"tap_max_duration_seconds": @(GestureTapMaxDuration),
                 @"swipe_max_duration_seconds": @(GestureSwipeMaxDuration), @"tap_max_distance": @(GestureTapMaxDistance),
@@ -238,7 +239,7 @@
         self.trackpadView.clickPoint = nil;
     }
     for (NSDictionary *touch in touches) {
-        NSNumber *identifier = touch[@"id"];
+        NSNumber *identifier = touch[@"path"];
         double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
         if (!isfinite(x) || !isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1) continue;
         NSMutableArray *trail = self.trackpadView.trails[identifier];
@@ -271,7 +272,7 @@
     double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
     if (!isfinite(x) || !isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return;
     self.trackpadView.clickPoint = [NSValue valueWithPoint:NSMakePoint(x, y)];
-    [self record:[NSString stringWithFormat:@"Mouse-down near touch # %@ at %.1f%%, %.1f%% (approximate)", touch[@"id"], x * 100, y * 100]];
+    [self record:[NSString stringWithFormat:@"Mouse-down near contact path # %@ at %.1f%%, %.1f%% (approximate)", touch[@"path"], x * 100, y * 100]];
 }
 - (void)setMode:(GestureMode)mode enabled:(BOOL)enabled available:(BOOL)available {
     self.mode = mode;

@@ -57,6 +57,9 @@ Choose **Open Trackpad Diagnostics…** from the menu bar icon. The floating
 window shows a trackpad with the exact active strips, a dot for every touching
 finger, finger IDs, normalized coordinates, and the last movement paths. The
 small hollow circle marks the start of a path. Corners remain inactive.
+Displayed finger numbers and trail continuity use the contact's `path`. The raw
+`id` field can change during a stationary touch and is retained only as sensor
+data in the logs. A changed contact path still cancels the gesture.
 
 The window does not take keyboard focus away from your target app. While it is
 open, **Observe Only in Diagnostics** is enabled by default: gestures are still
@@ -173,6 +176,10 @@ duration and movement limits, corners, ordinary touches, multiple fingers,
 contact replacement, and one action per gesture. The macOS CI job also compiles
 and packages the app, and runs session-log tests for ordered frame retention,
 nonfinite sensor values, stopping/reopening sessions, and directory failures.
+It also replays a metadata-free, 19-frame touch fixture from a real missed tap
+through the production input-processing method. This verifies that raw `id`
+changes preserve a stable-path tap, while path changes and additional fingers
+still cancel it. Recognition thresholds are unchanged.
 CI cannot validate physical trackpad input or permissions.
 
 This initial implementation was written in a Linux workspace. Gesture tests can

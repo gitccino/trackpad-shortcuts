@@ -12,3 +12,5 @@ test-macos:
 	@mkdir -p build
 	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation Sources/SessionLog.m Tests/SessionLogTests.m -o build/session-log-tests
 	./build/session-log-tests
+	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation Sources/Trackpad.m Sources/Gesture.c Tests/TrackpadReplayTests.m -o build/trackpad-replay-tests
+	./build/trackpad-replay-tests

@@ -6,7 +6,8 @@
 @property(nonatomic) GestureMode mode;
 @property(nonatomic, copy) void (^onAction)(EdgeAction);
 // Delivered on the main thread, including while actions are paused.
-// Each sample contains id, x, y and state (3 = touch down, 4 = touching).
+// Each sample contains raw id, stable contact path, x, y and state
+// (3 = touch down, 4 = touching). Recognition and trails use path, not raw id.
 @property(nonatomic, copy) void (^onFrame)(NSArray<NSDictionary<NSString *, NSNumber *> *> *);
 @property(nonatomic, copy) void (^onFeedback)(NSString *);
 // All framework contact states, before the recognizer's touch-state filter.

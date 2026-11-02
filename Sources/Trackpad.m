@@ -35,8 +35,8 @@ static __weak Trackpad *activeTrackpad;
     double _lastX, _lastY;
     NSUInteger _generation;
 }
-- (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
-                raw:(NSDictionary *)raw time:(double)time generation:(NSUInteger)generation;
+- (void)consumeFrame:(NSDictionary *)raw generation:(NSUInteger)generation;
+- (void)processContactFrame:(NSDictionary *)raw;
 - (NSUInteger)generation;
 @end
 
@@ -48,7 +48,7 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         Trackpad *trackpad = activeTrackpad;
         if (!trackpad) return;
         // Copy scalar values before returning: the framework owns the buffer.
-        NSMutableArray *samples = [NSMutableArray array];
+        NSUInteger touchingCount = 0;
         NSMutableArray *rawContacts = [NSMutableArray array];
         for (size_t i = 0; i < count; i++) {
             Contact c = contacts[i];
@@ -58,18 +58,15 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
                 @"contact_timestamp": @(c.timestamp), @"z_total": @(c.pressure),
                 @"major_axis": @(c.major), @"minor_axis": @(c.minor), @"angle": @(c.angle) }];
             if (contacts[i].state == 3 || contacts[i].state == 4) {
-                [samples addObject:@{ @"id": @(contacts[i].identifier),
-                    @"x": @(contacts[i].normalized.position.x),
-                    @"y": @(contacts[i].normalized.position.y), @"state": @(contacts[i].state) }];
+                touchingCount++;
             }
         }
         NSUInteger generation = [trackpad generation];
-        NSArray *snapshot = [samples copy];
         NSDictionary *raw = @{ @"device_timestamp": @(timestamp), @"frame": @(frame),
             @"callback_uptime": @(callbackUptime),
-            @"stream_generation": @(generation), @"contacts": [rawContacts copy], @"touching_count": @(samples.count) };
+            @"stream_generation": @(generation), @"contacts": [rawContacts copy], @"touching_count": @(touchingCount) };
         dispatch_async(dispatch_get_main_queue(), ^{
-            [trackpad consumeTouches:snapshot raw:raw time:timestamp generation:generation];
+            [trackpad consumeFrame:raw generation:generation];
         });
     }
 }
@@ -128,16 +125,26 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
     if (self.onEvent) self.onEvent(@"recognizer_reset", @{ @"reason": @"mode_set", @"mode": _mode == ModeTap ? @"tap" : @"swipe", @"touching_count": @(_touchCount) });
 }
-- (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
-                raw:(NSDictionary *)raw time:(double)time generation:(NSUInteger)generation {
+- (void)consumeFrame:(NSDictionary *)raw generation:(NSUInteger)generation {
     if (generation != _generation || !_device) return;
     if (self.onRawFrame) self.onRawFrame(raw);
+    [self processContactFrame:raw];
+}
+// Shared by live input and the recorded-frame regression test. Device lifecycle
+// checks stay in consumeFrame so replay requires no hardware or permissions.
+- (void)processContactFrame:(NSDictionary *)raw {
+    NSMutableArray<NSDictionary<NSString *, NSNumber *> *> *touches = [NSMutableArray array];
+    for (NSDictionary *contact in raw[@"contacts"]) {
+        int state = [contact[@"state"] intValue];
+        if (state == 3 || state == 4) [touches addObject:contact];
+    }
+    double time = [raw[@"device_timestamp"] doubleValue];
     _touchCount = (int)touches.count;
     if (self.onFrame) self.onFrame(touches);
     if (!_enabled) return;
     int count = (int)touches.count;
     NSDictionary *touch = touches.firstObject;
-    int identifier = [touch[@"id"] intValue];
+    int identifier = [touch[@"path"] intValue];
     double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
     if (count == 1) { _lastX = x; _lastY = y; }
     Gesture before = _gesture;
@@ -149,6 +156,7 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
             @"action": @(action), @"start_edge": @(before.edge), @"feedback": @(_gesture.feedback),
             @"reason": [NSString stringWithUTF8String:gestureFeedbackText(_gesture.feedback)],
             @"has_start": @(before.tracking), @"blocked": @(before.blocked),
+            @"contact_identity": @"path", @"contact_path": @(before.identifier),
             @"duration_ms": before.tracking ? @((time - before.started) * 1000) : NSNull.null,
             @"start_x": @(before.startX), @"start_y": @(before.startY),
             @"end_x": @(_lastX), @"end_y": @(_lastY), @"max_distance": @(before.maxDistance) });
