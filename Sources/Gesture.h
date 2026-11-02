@@ -11,6 +11,8 @@ typedef enum {
     FeedbackSidewaysDrift, FeedbackWaitingForLift
 } GestureFeedback;
 enum { EdgeWidthPercent = 7, EdgeCornerPercent = 15 };
+extern const double GestureMinDuration, GestureTapMaxDuration, GestureSwipeMaxDuration;
+extern const double GestureTapMaxDistance, GestureSwipeMinDistance, GestureSwipeMaxDrift;
 typedef struct {
     bool tracking, blocked;
     int identifier;

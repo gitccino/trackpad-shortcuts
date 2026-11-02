@@ -9,6 +9,9 @@
 // Each sample contains id, x, y and state (3 = touch down, 4 = touching).
 @property(nonatomic, copy) void (^onFrame)(NSArray<NSDictionary<NSString *, NSNumber *> *> *);
 @property(nonatomic, copy) void (^onFeedback)(NSString *);
+// All framework contact states, before the recognizer's touch-state filter.
+@property(nonatomic, copy) void (^onRawFrame)(NSDictionary *);
+@property(nonatomic, copy) void (^onEvent)(NSString *, NSDictionary *);
 - (BOOL)start;
 - (void)stop;
 @end

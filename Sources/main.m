@@ -98,6 +98,7 @@ static NSString *arrangeWindow(EdgeAction action) {
 @property(nonatomic) BOOL available;
 @property(nonatomic, strong) Diagnostics *diagnostics;
 @property(nonatomic, strong) NSMenuItem *observe;
+@property(nonatomic, strong) NSMenuItem *testPositions;
 @end
 
 @implementation AppDelegate
@@ -116,11 +117,14 @@ static NSString *arrangeWindow(EdgeAction action) {
         AppDelegate *owner = weakSelf;
         if (owner.diagnostics.window.visible && owner.diagnostics.observeOnly) {
             owner.status.title = @"Gesture recognized — diagnostics is observing only";
+            [owner.diagnostics recordEvent:@"action_result" fields:@{ @"action": @(action), @"suppressed": @YES,
+                @"message": owner.status.title, @"accessibility_trusted": @(accessibilityGranted(NO)) }];
             return;
         }
         NSString *result = arrangeWindow(action);
         owner.status.title = result;
-        if (owner.diagnostics.window.visible) [owner.diagnostics record:result];
+        if (owner.diagnostics.window.visible) [owner.diagnostics recordEvent:@"action_result" fields:@{
+            @"action": @(action), @"suppressed": @NO, @"message": result, @"accessibility_trusted": @(accessibilityGranted(NO)) }];
     };
     self.trackpad.onFrame = ^(NSArray<NSDictionary<NSString *, NSNumber *> *> *touches) {
         [weakSelf.diagnostics updateTouches:touches];
@@ -128,6 +132,8 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.trackpad.onFeedback = ^(NSString *feedback) {
         if (weakSelf.diagnostics.window.visible) [weakSelf.diagnostics record:feedback];
     };
+    self.trackpad.onRawFrame = ^(NSDictionary *frame) { [weakSelf.diagnostics recordRawFrame:frame]; };
+    self.trackpad.onEvent = ^(NSString *type, NSDictionary *fields) { [weakSelf.diagnostics recordEvent:type fields:fields]; };
     self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.button.image = [NSImage imageWithSystemSymbolName:@"rectangle.split.2x1" accessibilityDescription:@"Trackpad Shortcuts"];
     self.statusItem.button.toolTip = @"Trackpad Shortcuts";
@@ -151,6 +157,14 @@ static NSString *arrangeWindow(EdgeAction action) {
     [menu addItem:NSMenuItem.separatorItem];
     [self item:@"Open Trackpad Diagnostics…" action:@selector(showDiagnostics:) menu:menu];
     self.observe = [self item:@"Observe Only in Diagnostics" action:@selector(toggleObserve:) menu:menu];
+    self.testPositions = [self item:@"Mark Test Position" action:NULL menu:menu];
+    NSMenu *positions = [NSMenu new];
+    positions.autoenablesItems = NO;
+    for (NSString *label in @[@"Left edge", @"Right edge", @"Bottom edge", @"Center", @"Corners", @"Unlabeled"]) {
+        [self item:label action:@selector(markTest:) menu:positions];
+    }
+    self.testPositions.submenu = positions;
+    [self item:@"Show Diagnostic Logs in Finder" action:@selector(showLogs:) menu:menu];
     [menu addItem:NSMenuItem.separatorItem];
     [self item:@"Quit" action:@selector(quit:) menu:menu].keyEquivalent = @"q";
     self.statusItem.menu = menu;
@@ -168,6 +182,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.pause.title = self.trackpad.enabled ? @"Pause" : @"Resume";
     self.observe.state = !self.diagnostics || self.diagnostics.observeOnly ? NSControlStateValueOn : NSControlStateValueOff;
     self.observe.enabled = self.diagnostics.window.visible;
+    self.testPositions.enabled = self.diagnostics.window.visible;
 }
 - (void)selectTap:(id)sender { (void)sender; [self setGestureMode:ModeTap]; }
 - (void)selectSwipe:(id)sender { (void)sender; [self setGestureMode:ModeSwipe]; }
@@ -213,16 +228,24 @@ static NSString *arrangeWindow(EdgeAction action) {
     (void)sender;
     if (!self.diagnostics) {
         self.diagnostics = [Diagnostics new];
-        __weak AppDelegate *weakSelf = self;
-        self.diagnostics.onClose = ^{
-            Trackpad *trackpad = weakSelf.trackpad;
-            trackpad.mode = trackpad.mode;
-        };
     }
-    self.trackpad.mode = self.trackpad.mode;
+    __weak AppDelegate *weakSelf = self;
+    self.diagnostics.onClose = ^{
+        Trackpad *trackpad = weakSelf.trackpad;
+        trackpad.mode = trackpad.mode;
+    };
     [self refreshDiagnostics];
     [self.diagnostics show];
+    self.trackpad.mode = self.trackpad.mode;
+    [self refreshDiagnostics];
+    [self.diagnostics recordEvent:@"accessibility_status" fields:@{ @"trusted": @(accessibilityGranted(NO)) }];
     [self.diagnostics record:@"Touch the physical trackpad. Close this window to resume normal window actions."];
+}
+- (void)markTest:(NSMenuItem *)sender { [self.diagnostics markTest:sender.title]; }
+- (void)showLogs:(id)sender {
+    (void)sender;
+    if (!self.diagnostics) self.diagnostics = [Diagnostics new];
+    [self.diagnostics showLogs];
 }
 - (void)toggleObserve:(id)sender {
     (void)sender;
@@ -235,6 +258,7 @@ static NSString *arrangeWindow(EdgeAction action) {
 - (void)quit:(id)sender { (void)sender; [NSApp terminate:nil]; }
 - (void)applicationWillTerminate:(NSNotification *)notification {
     (void)notification;
+    [self.diagnostics finishSession:@"app_quit"];
     [self.trackpad stop];
 }
 @end

@@ -36,19 +36,27 @@ static __weak Trackpad *activeTrackpad;
     NSUInteger _generation;
 }
 - (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
-                time:(double)time generation:(NSUInteger)generation;
+                raw:(NSDictionary *)raw time:(double)time generation:(NSUInteger)generation;
 - (NSUInteger)generation;
 @end
 
 static void receiveFrame(void *device, Contact *contacts, size_t count,
                          double timestamp, size_t frame) {
-    (void)device; (void)frame;
+    (void)device;
     @autoreleasepool {
+        NSTimeInterval callbackUptime = NSProcessInfo.processInfo.systemUptime;
         Trackpad *trackpad = activeTrackpad;
         if (!trackpad) return;
         // Copy scalar values before returning: the framework owns the buffer.
         NSMutableArray *samples = [NSMutableArray array];
+        NSMutableArray *rawContacts = [NSMutableArray array];
         for (size_t i = 0; i < count; i++) {
+            Contact c = contacts[i];
+            [rawContacts addObject:@{ @"id": @(c.identifier), @"path": @(c.path), @"state": @(c.state),
+                @"x": @(c.normalized.position.x), @"y": @(c.normalized.position.y),
+                @"velocity_x": @(c.normalized.velocity.x), @"velocity_y": @(c.normalized.velocity.y),
+                @"contact_timestamp": @(c.timestamp), @"z_total": @(c.pressure),
+                @"major_axis": @(c.major), @"minor_axis": @(c.minor), @"angle": @(c.angle) }];
             if (contacts[i].state == 3 || contacts[i].state == 4) {
                 [samples addObject:@{ @"id": @(contacts[i].identifier),
                     @"x": @(contacts[i].normalized.position.x),
@@ -57,8 +65,11 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         }
         NSUInteger generation = [trackpad generation];
         NSArray *snapshot = [samples copy];
+        NSDictionary *raw = @{ @"device_timestamp": @(timestamp), @"frame": @(frame),
+            @"callback_uptime": @(callbackUptime),
+            @"stream_generation": @(generation), @"contacts": [rawContacts copy], @"touching_count": @(samples.count) };
         dispatch_async(dispatch_get_main_queue(), ^{
-            [trackpad consumeTouches:snapshot time:timestamp generation:generation];
+            [trackpad consumeTouches:snapshot raw:raw time:timestamp generation:generation];
         });
     }
 }
@@ -87,9 +98,11 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     activeTrackpad = self;
     _register(_device, receiveFrame);
     if (_start(_device, 0) != 0) { [self stop]; return NO; }
+    if (self.onEvent) self.onEvent(@"stream_start", @{ @"stream_generation": @(_generation) });
     return YES;
 }
 - (void)stop {
+    if (_device && self.onEvent) self.onEvent(@"stream_stop", @{ @"stream_generation": @(_generation), @"touching_count": @(_touchCount) });
     activeTrackpad = nil;
     @synchronized (self) { _generation++; }
     if (_device) {
@@ -107,15 +120,18 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     // Cancel a contact already in progress without discarding the next fresh gesture.
     _gesture = (Gesture){ .blocked = _touchCount > 0,
         .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
+    if (self.onEvent) self.onEvent(@"recognizer_reset", @{ @"reason": @"enabled_changed", @"enabled": @(_enabled), @"touching_count": @(_touchCount) });
 }
 - (void)setMode:(GestureMode)mode {
     _mode = mode;
     _gesture = (Gesture){ .blocked = _touchCount > 0,
         .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
+    if (self.onEvent) self.onEvent(@"recognizer_reset", @{ @"reason": @"mode_set", @"mode": _mode == ModeTap ? @"tap" : @"swipe", @"touching_count": @(_touchCount) });
 }
 - (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
-                time:(double)time generation:(NSUInteger)generation {
+                raw:(NSDictionary *)raw time:(double)time generation:(NSUInteger)generation {
     if (generation != _generation || !_device) return;
+    if (self.onRawFrame) self.onRawFrame(raw);
     _touchCount = (int)touches.count;
     if (self.onFrame) self.onFrame(touches);
     if (!_enabled) return;
@@ -128,6 +144,15 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     EdgeAction action = gestureUpdate(&_gesture, _mode, count, identifier,
                                      count == 0 ? _lastX : x,
                                      count == 0 ? _lastY : y, time);
+    if (count == 0 && (before.tracking || before.blocked) && self.onEvent) {
+        self.onEvent(@"gesture_result", @{ @"device_timestamp": @(time), @"mode": _mode == ModeTap ? @"tap" : @"swipe",
+            @"action": @(action), @"start_edge": @(before.edge), @"feedback": @(_gesture.feedback),
+            @"reason": [NSString stringWithUTF8String:gestureFeedbackText(_gesture.feedback)],
+            @"has_start": @(before.tracking), @"blocked": @(before.blocked),
+            @"duration_ms": before.tracking ? @((time - before.started) * 1000) : NSNull.null,
+            @"start_x": @(before.startX), @"start_y": @(before.startY),
+            @"end_x": @(_lastX), @"end_y": @(_lastY), @"max_distance": @(before.maxDistance) });
+    }
     if (count == 0 && (before.tracking || before.blocked) && self.onFeedback) {
         NSString *reason = [NSString stringWithUTF8String:gestureFeedbackText(_gesture.feedback)];
         NSString *name = action == ActionLeft ? @"Left half" : action == ActionRight ? @"Right half" : @"Almost maximize";

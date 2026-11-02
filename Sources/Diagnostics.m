@@ -1,4 +1,5 @@
 #import "Diagnostics.h"
+#import "SessionLog.h"
 #include <math.h>
 
 @interface TrackpadView : NSView
@@ -7,6 +8,8 @@
 @property(nonatomic, strong) NSMutableArray<NSString *> *events;
 @property(nonatomic, copy) NSString *state;
 @property(nonatomic, strong) NSValue *clickPoint;
+@property(nonatomic, copy) NSString *recordingStatus;
+@property(nonatomic) BOOL recordingError;
 @end
 
 @implementation TrackpadView
@@ -16,6 +19,7 @@
         _trails = [NSMutableDictionary dictionary];
         _events = [NSMutableArray array];
         _state = @"Waiting for trackpad";
+        _recordingStatus = @"Not recording";
     }
     return self;
 }
@@ -49,8 +53,10 @@
     NSString *live = self.touches.count ? [NSString stringWithFormat:@"%lu finger%@ touching", (unsigned long)self.touches.count,
         self.touches.count == 1 ? @"" : @"s"] : @"No fingers touching · last path stays visible";
     [self text:live rect:NSMakeRect(28, height - 104, width - 56, 20) size:12 color:NSColor.secondaryLabelColor];
+    [self text:self.recordingStatus rect:NSMakeRect(28, height - 126, width - 56, 20)
+        size:11 color:self.recordingError ? NSColor.systemRedColor : NSColor.secondaryLabelColor];
 
-    NSRect pad = NSMakeRect(28, 218, width - 56, height - 338);
+    NSRect pad = NSMakeRect(28, 218, width - 56, height - 364);
     NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:pad xRadius:24 yRadius:24];
     NSGradient *surface = [[NSGradient alloc] initWithStartingColor:NSColor.controlBackgroundColor
         endingColor:NSColor.windowBackgroundColor];
@@ -131,6 +137,11 @@
 @property(nonatomic, strong) id localClickMonitor;
 @property(nonatomic, copy) NSArray<NSDictionary<NSString *, NSNumber *> *> *lastTouches;
 @property(nonatomic) NSTimeInterval lastTouchTime;
+@property(nonatomic, strong) SessionLog *sessionLog;
+@property(nonatomic, copy) NSString *testLabel;
+@property(nonatomic) GestureMode mode;
+@property(nonatomic) BOOL actionsEnabled;
+@property(nonatomic) BOOL available;
 @end
 
 @implementation Diagnostics
@@ -140,6 +151,7 @@
         backing:NSBackingStoreBuffered defer:NO];
     if ((self = [super initWithWindow:panel])) {
         _observeOnly = YES;
+        _testLabel = @"Unlabeled";
         panel.title = @"Trackpad Diagnostics";
         panel.minSize = NSMakeSize(760, 640);
         panel.floatingPanel = YES;
@@ -152,11 +164,10 @@
         [panel center];
         __weak Diagnostics *weakSelf = self;
         _globalClickMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown handler:^(NSEvent *event) {
-            (void)event;
-            [weakSelf recordClick];
+            [weakSelf recordClick:event];
         }];
         _localClickMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown handler:^NSEvent *(NSEvent *event) {
-            [weakSelf recordClick];
+            [weakSelf recordClick:event];
             return event;
         }];
     }
@@ -173,20 +184,51 @@
         self.trackpadView.clickPoint = nil;
         self.lastTouches = @[];
         self.trackpadView.needsDisplay = YES;
+        self.sessionLog = [SessionLog new];
+        __weak Diagnostics *weakSelf = self;
+        self.sessionLog.onError = ^(NSError *error) {
+            weakSelf.trackpadView.recordingError = YES;
+            weakSelf.trackpadView.recordingStatus = [@"LOGGING FAILED: " stringByAppendingString:error.localizedDescription];
+            weakSelf.trackpadView.needsDisplay = YES;
+            [weakSelf displayMessage:weakSelf.trackpadView.recordingStatus];
+        };
+        NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+        NSError *error = nil;
+        BOOL started = [self.sessionLog startInDirectory:SessionLog.directoryURL metadata:@{
+            @"app_version": info[@"CFBundleShortVersionString"] ?: @"unknown",
+            @"build_revision": info[@"TrackpadBuildRevision"] ?: @"unknown",
+            @"macos": NSProcessInfo.processInfo.operatingSystemVersionString,
+            @"algorithm": @"edge-v1", @"coordinate_origin": @"bottom_left", @"recognizer_touch_states": @[@3, @4],
+            @"edge_width_percent": @(EdgeWidthPercent), @"corner_exclusion_percent": @(EdgeCornerPercent),
+            @"thresholds": @{ @"min_duration_seconds": @(GestureMinDuration), @"tap_max_duration_seconds": @(GestureTapMaxDuration),
+                @"swipe_max_duration_seconds": @(GestureSwipeMaxDuration), @"tap_max_distance": @(GestureTapMaxDistance),
+                @"swipe_min_distance": @(GestureSwipeMinDistance), @"swipe_max_drift": @(GestureSwipeMaxDrift) },
+            @"mode": self.mode == ModeTap ? @"tap" : @"swipe", @"actions_enabled": @(self.actionsEnabled),
+            @"trackpad_available": @(self.available), @"observe_only": @(self.observeOnly),
+            @"test_label": self.testLabel, @"executable": NSBundle.mainBundle.executableURL.path ?: @"unknown"
+        } error:&error];
+        self.trackpadView.recordingError = !started;
+        self.trackpadView.recordingStatus = started ? [NSString stringWithFormat:@"Recording · %@ · %@", self.testLabel, self.sessionLog.fileURL.lastPathComponent] :
+            [@"LOGGING FAILED: " stringByAppendingString:error.localizedDescription ?: @"Unknown error"];
     }
     [self.window orderFrontRegardless];
 }
 - (void)windowWillClose:(NSNotification *)notification {
     (void)notification;
+    [self finishSession:@"window_closed"];
     if (self.onClose) self.onClose();
 }
 - (void)record:(NSString *)message {
+    [self recordEvent:@"message" fields:@{ @"message": message }];
+}
+- (void)displayMessage:(NSString *)message {
     NSDateFormatter *formatter = [NSDateFormatter new];
     formatter.dateFormat = @"HH:mm:ss";
     NSString *line = [NSString stringWithFormat:@"%@  %@", [formatter stringFromDate:NSDate.date], message];
     [self.trackpadView.events insertObject:line atIndex:0];
     if (self.trackpadView.events.count > 6) [self.trackpadView.events removeLastObject];
-    self.trackpadView.toolTip = [self.trackpadView.events componentsJoinedByString:@"\n"];
+    self.trackpadView.toolTip = [NSString stringWithFormat:@"%@\n%@", self.sessionLog.fileURL.path ?: @"",
+        [self.trackpadView.events componentsJoinedByString:@"\n"]];
     self.trackpadView.needsDisplay = YES;
 }
 - (void)updateTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches {
@@ -216,9 +258,15 @@
     }
     self.trackpadView.needsDisplay = YES;
 }
-- (void)recordClick {
-    if (!self.window.visible || !self.lastTouches.count ||
-        NSProcessInfo.processInfo.systemUptime - self.lastTouchTime > 0.15) return;
+- (void)recordClick:(NSEvent *)event {
+    if (!self.window.visible) return;
+    NSTimeInterval age = NSProcessInfo.processInfo.systemUptime - self.lastTouchTime;
+    BOOL correlated = self.lastTouches.count && age <= 0.15;
+    [self recordEvent:@"mouse_down" fields:@{ @"button": @(event.buttonNumber), @"event_timestamp": @(event.timestamp),
+        @"approximate": @YES, @"correlated": @(correlated),
+        @"touch_age_ms": self.lastTouches.count ? @(age * 1000) : NSNull.null,
+        @"associated_touch": correlated ? self.lastTouches.firstObject : NSNull.null }];
+    if (!correlated) return;
     NSDictionary *touch = self.lastTouches.firstObject;
     double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
     if (!isfinite(x) || !isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return;
@@ -226,10 +274,42 @@
     [self record:[NSString stringWithFormat:@"Mouse-down near touch # %@ at %.1f%%, %.1f%% (approximate)", touch[@"id"], x * 100, y * 100]];
 }
 - (void)setMode:(GestureMode)mode enabled:(BOOL)enabled available:(BOOL)available {
+    self.mode = mode;
+    self.actionsEnabled = enabled;
+    self.available = available;
     self.trackpadView.state = [NSString stringWithFormat:@"%@ · %@ · %@",
         !available ? @"Trackpad unavailable — use Reconnect Trackpad" : !enabled ? @"Paused (raw touches still shown)" : @"Trackpad connected",
         mode == ModeTap ? @"Tap" : @"Inward swipe",
         self.observeOnly ? @"Observe only while this window is open" : @"Window actions enabled"];
     self.trackpadView.needsDisplay = YES;
+    [self recordEvent:@"settings" fields:@{ @"mode": mode == ModeTap ? @"tap" : @"swipe", @"actions_enabled": @(enabled),
+        @"trackpad_available": @(available), @"observe_only": @(self.observeOnly) }];
 }
+- (void)recordRawFrame:(NSDictionary *)frame {
+    if (self.window.visible) [self recordEvent:@"touch_frame" fields:frame];
+}
+- (void)recordEvent:(NSString *)type fields:(NSDictionary *)fields {
+    if (!self.window.visible) return;
+    NSMutableDictionary *data = [fields mutableCopy];
+    data[@"test_label"] = self.testLabel;
+    [self.sessionLog append:type fields:data];
+    if (fields[@"message"]) [self displayMessage:fields[@"message"]];
+}
+- (void)markTest:(NSString *)label {
+    self.testLabel = label;
+    [self recordEvent:@"test_marker" fields:@{ @"message": [@"Testing: " stringByAppendingString:label] }];
+    if (!self.trackpadView.recordingError) {
+        self.trackpadView.recordingStatus = [NSString stringWithFormat:@"Recording · %@ · %@", label, self.sessionLog.fileURL.lastPathComponent];
+    }
+    self.trackpadView.needsDisplay = YES;
+}
+- (void)showLogs {
+    if (self.sessionLog.fileURL && [NSFileManager.defaultManager fileExistsAtPath:self.sessionLog.fileURL.path])
+        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[self.sessionLog.fileURL]];
+    else {
+        [NSFileManager.defaultManager createDirectoryAtURL:SessionLog.directoryURL withIntermediateDirectories:YES attributes:nil error:NULL];
+        [NSWorkspace.sharedWorkspace openURL:SessionLog.directoryURL];
+    }
+}
+- (void)finishSession:(NSString *)reason { [self.sessionLog finish:reason]; }
 @end

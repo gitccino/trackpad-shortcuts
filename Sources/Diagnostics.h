@@ -8,4 +8,9 @@
 - (void)updateTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches;
 - (void)record:(NSString *)message;
 - (void)setMode:(GestureMode)mode enabled:(BOOL)enabled available:(BOOL)available;
+- (void)recordRawFrame:(NSDictionary *)frame;
+- (void)recordEvent:(NSString *)type fields:(NSDictionary *)fields;
+- (void)markTest:(NSString *)label;
+- (void)showLogs;
+- (void)finishSession:(NSString *)reason;
 @end

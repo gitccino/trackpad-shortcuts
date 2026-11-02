@@ -1,6 +1,9 @@
 #include "Gesture.h"
 #include <math.h>
 
+const double GestureMinDuration = 0.035, GestureTapMaxDuration = 0.25, GestureSwipeMaxDuration = 0.7;
+const double GestureTapMaxDistance = 0.025, GestureSwipeMinDistance = 0.08, GestureSwipeMaxDrift = 0.05;
+
 EdgeAction gestureEdgeAt(double x, double y) {
     if (!isfinite(x) || !isfinite(y) || x < 0 || x > 1 || y < 0 || y > 1)
         return ActionNone;
@@ -37,16 +40,16 @@ static GestureFeedback finish(const Gesture *g, GestureMode mode, double x, doub
     if (g->blocked) return g->feedback;
     if (g->edge == ActionNone) return FeedbackOutsideEdge;
     double duration = time - g->started;
-    if (duration < 0.035) return FeedbackTooBrief;
-    if (duration > (mode == ModeTap ? 0.25 : 0.7)) return FeedbackTooLong;
+    if (duration < GestureMinDuration) return FeedbackTooBrief;
+    if (duration > (mode == ModeTap ? GestureTapMaxDuration : GestureSwipeMaxDuration)) return FeedbackTooLong;
     if (mode == ModeTap)
-        return g->maxDistance <= 0.025 ? FeedbackRecognized : FeedbackTapMoved;
+        return g->maxDistance <= GestureTapMaxDistance ? FeedbackRecognized : FeedbackTapMoved;
     double dx = x - g->startX, dy = y - g->startY;
     double inward = g->edge == ActionLeft ? dx : g->edge == ActionRight ? -dx : dy;
     double sideways = g->edge == ActionAlmostMaximize ? fabs(dx) : fabs(dy);
     if (inward < 0) return FeedbackWrongDirection;
-    if (sideways > 0.05) return FeedbackSidewaysDrift;
-    return inward >= 0.08 ? FeedbackRecognized : FeedbackSwipeShort;
+    if (sideways > GestureSwipeMaxDrift) return FeedbackSidewaysDrift;
+    return inward >= GestureSwipeMinDistance ? FeedbackRecognized : FeedbackSwipeShort;
 }
 
 EdgeAction gestureUpdate(Gesture *g, GestureMode mode, int count, int identifier,
