@@ -31,6 +31,7 @@ static __weak Trackpad *activeTrackpad;
     int (*_stop)(void *);
     void (*_release)(void *);
     Gesture _gesture;
+    int _touchCount;
     double _lastX, _lastY;
     NSUInteger _generation;
 }
@@ -98,20 +99,24 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         _device = NULL;
     }
     _gesture = (Gesture){0};
+    _touchCount = 0;
     if (self.onFrame) self.onFrame(@[]);
 }
 - (void)setEnabled:(BOOL)enabled {
     _enabled = enabled;
-    // Require a fresh all-fingers-up frame after any toggle.
-    _gesture = (Gesture){ .blocked = true, .feedback = FeedbackWaitingForLift };
+    // Cancel a contact already in progress without discarding the next fresh gesture.
+    _gesture = (Gesture){ .blocked = _touchCount > 0,
+        .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
 }
 - (void)setMode:(GestureMode)mode {
     _mode = mode;
-    _gesture = (Gesture){ .blocked = true, .feedback = FeedbackWaitingForLift };
+    _gesture = (Gesture){ .blocked = _touchCount > 0,
+        .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
 }
 - (void)consumeTouches:(NSArray<NSDictionary<NSString *, NSNumber *> *> *)touches
                 time:(double)time generation:(NSUInteger)generation {
     if (generation != _generation || !_device) return;
+    _touchCount = (int)touches.count;
     if (self.onFrame) self.onFrame(touches);
     if (!_enabled) return;
     int count = (int)touches.count;
