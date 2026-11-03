@@ -2,6 +2,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import "Trackpad.h"
 #import "Diagnostics.h"
+#import "WindowLayout.h"
 #include <math.h>
 
 static BOOL accessibilityGranted(BOOL prompt) {
@@ -62,13 +63,20 @@ static NSString *arrangeWindow(EdgeAction action) {
     if (!screen) { CFRelease(window); return @"No display available."; }
     CGRect target = accessibilityRect(screen.visibleFrame);
     if (action == ActionAlmostMaximize)
-        target = CGRectInset(target, target.size.width * 0.05, target.size.height * 0.05);
+        target = almostMaximizedRect(target);
     else {
         CGFloat leftWidth = floor(target.size.width / 2);
         if (action == ActionRight) {
             target.origin.x += leftWidth;
             target.size.width -= leftWidth;
         } else target.size.width = leftWidth;
+    }
+    if (shouldHideFocusedApp(action, current, target)) {
+        CFRelease(window);
+        // Accessibility calls can take time; don't hide an app that lost focus.
+        if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != front.processIdentifier)
+            return @"The focused app changed — try the gesture again.";
+        return [front hide] ? @"Hidden app" : @"Could not hide the focused app.";
     }
     AXValueRef position = AXValueCreate(kAXValueCGPointType, &target.origin);
     AXValueRef size = AXValueCreate(kAXValueCGSizeType, &target.size);
@@ -79,9 +87,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     CFRelease(position);
     CFRelease(size);
     CGRect actual = CGRectZero;
-    BOOL matches = windowRect(window, &actual) &&
-        fabs(actual.origin.x - target.origin.x) <= 2 && fabs(actual.origin.y - target.origin.y) <= 2 &&
-        fabs(actual.size.width - target.size.width) <= 2 && fabs(actual.size.height - target.size.height) <= 2;
+    BOOL matches = windowRect(window, &actual) && windowFramesMatch(actual, target);
     CFRelease(window);
     if (sizeError != kAXErrorSuccess || positionError != kAXErrorSuccess || !matches)
         return @"This app restricted the requested window placement.";
@@ -145,7 +151,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.status = [self item:@"Starting trackpad…" action:NULL menu:menu];
     self.status.enabled = NO;
     [menu addItem:NSMenuItem.separatorItem];
-    for (NSString *title in @[@"Left edge → Left half", @"Right edge → Right half", @"Bottom edge → Almost maximize"]) {
+    for (NSString *title in @[@"Left edge → Left half", @"Right edge → Right half", @"Bottom edge → Almost maximize / Hide app"]) {
         [self item:title action:NULL menu:menu].enabled = NO;
     }
     [menu addItem:NSMenuItem.separatorItem];

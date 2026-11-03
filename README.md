@@ -8,10 +8,17 @@ account, or background service.
 
 - Left edge → left half of the window's current display.
 - Right edge → right half.
-- Bottom edge → almost maximize, centered at 90% of the usable screen's width and height.
+- Bottom edge → almost maximize; hide the app if its focused window already matches that layout.
 
-The usable screen excludes the menu bar and Dock. Almost maximize keeps the
-window in the current desktop rather than entering macOS fullscreen.
+The usable screen excludes the menu bar and Dock. Almost maximize centers the
+window at 90% of the usable screen's width and height, keeping it in the current
+desktop rather than entering macOS fullscreen. If the focused window already
+matches that centered layout (within 2 points in position and size), the next
+bottom-edge gesture hides the entire focused app, like macOS Hide. It does not
+minimize or close the window. Restore the app with the Dock or app switcher.
+Each gesture targets whichever app is focused at that moment; it does not
+automatically unhide the previous app. A moved or constrained-size window is
+arranged again instead of being hidden. Left/right gestures continue to tile.
 
 ## Build and run
 
@@ -132,7 +139,7 @@ The JSON Lines format contains one JSON object per line, in sequence order:
   `z_total` is the framework's raw field, not calibrated force.
 - `gesture_result`: action/rejection code and reason, duration, start/end points,
   peak movement, and cancellation state. Action codes: 0 none, 1 left, 2 right,
-  3 almost maximize. The accompanying reason explains the feedback code.
+  3 almost maximize/hide app. The accompanying reason explains the feedback code.
 - `action_result`: attempted or observe-only-suppressed action, message, and
   Accessibility trust status. This separates recognition from window-control errors.
 - `settings`, `recognizer_reset`, `stream_start`, `stream_stop`, `test_marker`,
@@ -180,6 +187,8 @@ It also replays a metadata-free, 19-frame touch fixture from a real missed tap
 through the production input-processing method. This verifies that raw `id`
 changes preserve a stable-path tap, while path changes and additional fingers
 still cancel it. Recognition thresholds are unchanged.
+Window-layout tests cover the resize/hide decision, rounding tolerance, moved
+and constrained-size windows, multiple displays, and unchanged left/right actions.
 CI cannot validate physical trackpad input or permissions.
 
 This initial implementation was written in a Linux workspace. Gesture tests can

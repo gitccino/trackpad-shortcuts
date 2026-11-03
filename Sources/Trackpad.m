@@ -163,7 +163,7 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     }
     if (count == 0 && (before.tracking || before.blocked) && self.onFeedback) {
         NSString *reason = [NSString stringWithUTF8String:gestureFeedbackText(_gesture.feedback)];
-        NSString *name = action == ActionLeft ? @"Left half" : action == ActionRight ? @"Right half" : @"Almost maximize";
+        NSString *name = action == ActionLeft ? @"Left half" : action == ActionRight ? @"Right half" : @"Almost maximize / Hide app";
         NSString *summary = action == ActionNone ? reason : [NSString stringWithFormat:@"Recognized: %@", name];
         if (before.tracking) {
             summary = [summary stringByAppendingFormat:@" · %.0f ms · start %.1f%%, %.1f%% → end %.1f%%, %.1f%%",

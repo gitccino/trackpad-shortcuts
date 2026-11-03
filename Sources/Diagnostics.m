@@ -70,7 +70,7 @@
     [self zone:NSMakeRect(NSMinX(pad) + corner * NSWidth(pad), NSMinY(pad), (1 - 2 * corner) * NSWidth(pad), edge * NSHeight(pad)) color:NSColor.systemGreenColor];
     [self text:@"Left half" rect:NSMakeRect(NSMinX(pad) + 16, NSMidY(pad), 110, 20) size:12 color:NSColor.secondaryLabelColor];
     [self text:@"Right half" rect:NSMakeRect(NSMaxX(pad) - 116, NSMidY(pad), 100, 20) size:12 color:NSColor.secondaryLabelColor];
-    [self text:@"Almost maximize" rect:NSMakeRect(NSMidX(pad) - 58, NSMinY(pad) + 6, 140, 20) size:12 color:NSColor.secondaryLabelColor];
+    [self text:@"Almost maximize / Hide app" rect:NSMakeRect(NSMidX(pad) - 85, NSMinY(pad) + 6, 190, 20) size:12 color:NSColor.secondaryLabelColor];
     [self text:@"Inactive corners · colored strips show the exact active zones"
         rect:NSMakeRect(NSMinX(pad) + 16, NSMaxY(pad) - 30, NSWidth(pad) - 32, 20) size:12 color:NSColor.tertiaryLabelColor];
 
@@ -199,6 +199,7 @@
             @"build_revision": info[@"TrackpadBuildRevision"] ?: @"unknown",
             @"macos": NSProcessInfo.processInfo.operatingSystemVersionString,
             @"algorithm": @"edge-v2-contact-path", @"contact_identity": @"path",
+            @"bottom_edge_behavior": @"almost_maximize_or_hide_app",
             @"coordinate_origin": @"bottom_left", @"recognizer_touch_states": @[@3, @4],
             @"edge_width_percent": @(EdgeWidthPercent), @"corner_exclusion_percent": @(EdgeCornerPercent),
             @"thresholds": @{ @"min_duration_seconds": @(GestureMinDuration), @"tap_max_duration_seconds": @(GestureTapMaxDuration),

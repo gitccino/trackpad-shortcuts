@@ -10,6 +10,8 @@ test:
 
 test-macos:
 	@mkdir -p build
+	xcrun clang -std=c11 -Wall -Wextra -Werror -framework CoreGraphics Tests/WindowLayoutTests.c -o build/window-layout-tests
+	./build/window-layout-tests
 	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation Sources/SessionLog.m Tests/SessionLogTests.m -o build/session-log-tests
 	./build/session-log-tests
 	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation Sources/Trackpad.m Sources/Gesture.c Tests/TrackpadReplayTests.m -o build/trackpad-replay-tests
