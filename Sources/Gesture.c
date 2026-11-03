@@ -32,6 +32,7 @@ const char *gestureFeedbackText(GestureFeedback feedback) {
         case FeedbackWrongDirection: return "Swipe traveled away from the center";
         case FeedbackSidewaysDrift: return "Swipe drifted sideways more than 5%";
         case FeedbackWaitingForLift: return "Mode changed or resumed; lift all fingers first";
+        case FeedbackCursorCaptureCancelled: return "Cursor capture cancelled; lift all fingers and retry";
     }
     return "Unknown gesture result";
 }

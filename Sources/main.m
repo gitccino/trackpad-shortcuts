@@ -3,6 +3,7 @@
 #import "Trackpad.h"
 #import "Diagnostics.h"
 #import "WindowLayout.h"
+#import "CursorLock.h"
 #include <math.h>
 
 static BOOL accessibilityGranted(BOOL prompt) {
@@ -106,6 +107,9 @@ static NSString *arrangeWindow(EdgeAction action) {
 @property(nonatomic, strong) Diagnostics *diagnostics;
 @property(nonatomic, strong) NSMenuItem *observe;
 @property(nonatomic, strong) NSMenuItem *testPositions;
+@property(nonatomic, strong) CursorLock *cursorLock;
+@property(nonatomic, strong) NSTimer *cursorTimer;
+@property(nonatomic, strong) NSNumber *cursorServiceAvailable;
 @end
 
 @implementation AppDelegate
@@ -118,6 +122,8 @@ static NSString *arrangeWindow(EdgeAction action) {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     self.trackpad = [Trackpad new];
+    self.cursorLock = [CursorLock new];
+    self.trackpad.cursorLock = self.cursorLock;
     self.trackpad.mode = [NSUserDefaults.standardUserDefaults integerForKey:@"gestureMode"] == ModeSwipe ? ModeSwipe : ModeTap;
     __weak AppDelegate *weakSelf = self;
     self.trackpad.onAction = ^(EdgeAction action) {
@@ -126,6 +132,12 @@ static NSString *arrangeWindow(EdgeAction action) {
             owner.status.title = @"Gesture recognized — diagnostics is observing only";
             [owner.diagnostics recordEvent:@"action_result" fields:@{ @"action": @(action), @"suppressed": @YES,
                 @"message": owner.status.title, @"accessibility_trusted": @(accessibilityGranted(NO)) }];
+            return;
+        }
+        if (owner.trackpad.mode == ModeSwipe && !owner.cursorLock.available) {
+            owner.status.title = @"Swipe action cancelled — cursor freeze unavailable";
+            [owner.diagnostics recordEvent:@"action_result" fields:@{ @"action": @(action), @"suppressed": @YES,
+                @"suppression_reason": @"cursor_filter_unavailable", @"message": owner.status.title }];
             return;
         }
         NSString *result = arrangeWindow(action);
@@ -181,6 +193,10 @@ static NSString *arrangeWindow(EdgeAction action) {
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(reconnect:)
         name:NSWorkspaceDidWakeNotification object:nil];
     if (!accessibilityGranted(NO)) self.status.title = @"Grant Accessibility Access to arrange windows";
+    self.cursorTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) {
+        (void)timer;
+        [weakSelf ensureCursorCapture];
+    }];
 }
 - (void)menuWillOpen:(NSMenu *)menu {
     (void)menu;
@@ -197,6 +213,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.trackpad.mode = mode;
     [NSUserDefaults.standardUserDefaults setInteger:mode forKey:@"gestureMode"];
     self.status.title = mode == ModeTap ? @"Tap mode enabled" : @"Inward swipe mode enabled";
+    [self ensureCursorCapture];
     [self refreshDiagnostics];
     if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
 }
@@ -205,6 +222,7 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.trackpad.enabled = !self.trackpad.enabled;
     self.status.title = self.trackpad.enabled ? @"Listening for edge gestures" : @"Paused";
     self.statusItem.button.appearsDisabled = !self.trackpad.enabled;
+    [self ensureCursorCapture];
     [self refreshDiagnostics];
     if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
 }
@@ -225,11 +243,23 @@ static NSString *arrangeWindow(EdgeAction action) {
     self.available = [self.trackpad start];
     self.status.title = !self.available ? @"Trackpad unavailable — try Reconnect Trackpad" :
         self.trackpad.enabled ? @"Listening for edge gestures" : @"Paused";
+    [self ensureCursorCapture];
     [self refreshDiagnostics];
     if (self.diagnostics.window.visible) [self.diagnostics record:self.status.title];
 }
 - (void)refreshDiagnostics {
     [self.diagnostics setMode:self.trackpad.mode enabled:self.trackpad.enabled available:self.available];
+}
+- (void)ensureCursorCapture {
+    if (!self.available || !self.trackpad.enabled || self.trackpad.mode != ModeSwipe) return;
+    if (!self.cursorLock.available && accessibilityGranted(NO)) [self.cursorLock start];
+    BOOL available = self.cursorLock.available;
+    if (!self.cursorServiceAvailable || self.cursorServiceAvailable.boolValue != available) {
+        self.cursorServiceAvailable = @(available);
+        self.status.title = available ? @"Inward swipe mode enabled — cursor freeze ready" : @"Cursor freeze unavailable — check Accessibility access";
+        [self.diagnostics recordEvent:@"cursor_service" fields:@{ @"available": @(available), @"message": self.status.title }];
+    }
+    if (!available) self.status.title = @"Cursor freeze unavailable — check Accessibility access";
 }
 - (void)showDiagnostics:(id)sender {
     (void)sender;
@@ -267,6 +297,8 @@ static NSString *arrangeWindow(EdgeAction action) {
     (void)notification;
     [self.diagnostics finishSession:@"app_quit"];
     [self.trackpad stop];
+    [self.cursorTimer invalidate];
+    [self.cursorLock stop];
 }
 @end
 

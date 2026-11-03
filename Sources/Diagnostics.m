@@ -200,6 +200,7 @@
             @"macos": NSProcessInfo.processInfo.operatingSystemVersionString,
             @"algorithm": @"edge-v2-contact-path", @"contact_identity": @"path",
             @"bottom_edge_behavior": @"almost_maximize_or_hide_app",
+            @"swipe_cursor_capture": @YES,
             @"coordinate_origin": @"bottom_left", @"recognizer_touch_states": @[@3, @4],
             @"edge_width_percent": @(EdgeWidthPercent), @"corner_exclusion_percent": @(EdgeCornerPercent),
             @"thresholds": @{ @"min_duration_seconds": @(GestureMinDuration), @"tap_max_duration_seconds": @(GestureTapMaxDuration),

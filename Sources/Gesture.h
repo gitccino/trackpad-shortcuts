@@ -8,7 +8,7 @@ typedef enum {
     FeedbackNone, FeedbackRecognized, FeedbackOutsideEdge, FeedbackMultipleFingers,
     FeedbackInvalidPosition, FeedbackContactChanged, FeedbackTooBrief,
     FeedbackTooLong, FeedbackTapMoved, FeedbackSwipeShort, FeedbackWrongDirection,
-    FeedbackSidewaysDrift, FeedbackWaitingForLift
+    FeedbackSidewaysDrift, FeedbackWaitingForLift, FeedbackCursorCaptureCancelled
 } GestureFeedback;
 enum { EdgeWidthPercent = 7, EdgeCornerPercent = 15 };
 extern const double GestureMinDuration, GestureTapMaxDuration, GestureSwipeMaxDuration;

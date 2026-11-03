@@ -9,7 +9,7 @@ app="build/Trackpad Shortcuts.app"
 mkdir -p "$app/Contents/MacOS"
 xcrun clang -fobjc-arc -O2 -Wall -Wextra -Werror -mmacosx-version-min=12.0 \
     -framework AppKit -framework ApplicationServices \
-    Sources/main.m Sources/Trackpad.m Sources/Diagnostics.m Sources/SessionLog.m Sources/Gesture.c \
+    Sources/main.m Sources/Trackpad.m Sources/Diagnostics.m Sources/SessionLog.m Sources/CursorLock.m Sources/CursorPolicy.c Sources/Gesture.c \
     -o "$app/Contents/MacOS/TrackpadShortcuts"
 cp Info.plist "$app/Contents/Info.plist"
 task_revision=$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)

@@ -1,9 +1,11 @@
 #import <Foundation/Foundation.h>
 #import "Gesture.h"
+@class CursorLock;
 
 @interface Trackpad : NSObject
 @property(nonatomic) BOOL enabled;
 @property(nonatomic) GestureMode mode;
+@property(nonatomic, strong) CursorLock *cursorLock;
 @property(nonatomic, copy) void (^onAction)(EdgeAction);
 // Delivered on the main thread, including while actions are paused.
 // Each sample contains raw id, stable contact path, x, y and state

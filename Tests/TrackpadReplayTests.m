@@ -70,6 +70,26 @@ int main(void) {
         require(injected && actions.count == 0 && results.count == 1 &&
             [results.firstObject[@"feedback"] intValue] == FeedbackMultipleFingers,
             @"A second finger must still cancel until all contacts lift");
+
+        [actions removeAllObjects]; [results removeAllObjects];
+        trackpad.mode = ModeSwipe;
+        NSArray *swipe = @[
+            @{ @"device_timestamp": @1, @"contacts": @[@{ @"path": @6, @"id": @12, @"state": @3, @"x": @0.97, @"y": @0.5 }] },
+            @{ @"device_timestamp": @1.1, @"contacts": @[@{ @"path": @6, @"id": @7, @"state": @4, @"x": @0.85, @"y": @0.5 }] },
+            @{ @"device_timestamp": @1.2, @"contacts": @[] }
+        ];
+        for (NSDictionary *frame in swipe) [trackpad processContactFrame:frame];
+        require(actions.count == 1 && [actions.firstObject intValue] == ActionRight,
+            @"A normal stable-path inward swipe still acts exactly once");
+        [actions removeAllObjects]; [results removeAllObjects];
+        for (NSUInteger i = 0; i < swipe.count; i++) {
+            NSMutableDictionary *frame = [swipe[i] mutableCopy];
+            if (i >= 1) frame[@"cursor_capture"] = @{ @"cancellation": @(FeedbackCursorCaptureCancelled) };
+            [trackpad processContactFrame:frame];
+        }
+        require(actions.count == 0 && results.count == 1 &&
+            [results.firstObject[@"feedback"] intValue] == FeedbackCursorCaptureCancelled,
+            @"A cancelled cursor capture must not execute a late window action");
         puts("Recorded trackpad replay tests passed");
     }
     return 0;

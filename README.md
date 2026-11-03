@@ -50,6 +50,36 @@ the same edge, travel at least 8% inward, then lift within 700 ms. Sideways drif
 must stay within 5%. Actions happen on lift. The app remembers your gesture mode.
 Multiple fingers cancel a gesture until every finger lifts.
 
+### Cursor freeze for inward swipes
+
+In **Swipe inward** mode, one finger starting in an active edge captures pointer
+movement immediately when its first touching frame arrives. Move inward and lift
+as usual; the pointer stays in place rather than following the swipe. Tap mode
+and touches starting outside an active edge use normal pointer behavior.
+
+The filter also swallows button presses during capture and their matching
+releases. It absorbs up to 35 ms of trailing movement and 150 ms of delayed
+tap-to-click input after release. A fresh ordinary touch clears that short tail.
+An existing mouse-button drag is left alone and cancels the candidate swipe.
+Suppressed input is discarded, never replayed, and the app does not warp or
+disconnect the cursor.
+
+Capture releases on lift, a second finger, a changed contact path, invalid input,
+mode changes, Pause, sleep, reconnect, or quit. A swipe moving outward more than
+2.5% or sideways more than 5% cancels until lift, even if it later returns inward.
+A dedicated input-filter thread expires capture after the 700 ms swipe deadline
+or 250 ms without touch frames. These cancellations also cancel the window
+command; they cannot release the pointer and then execute a late gesture.
+
+Accessibility access is needed for the active event filter. If it cannot start,
+the menu reports **Cursor freeze unavailable**; normal input remains available
+and live swipe window actions are suppressed until capture is ready.
+The app retries after access is granted. Observe Only still freezes the cursor
+in swipe mode while suppressing window actions. Because system pointer events
+do not reliably identify the source device, a simultaneously used external mouse
+is also affected during the short capture. Keyboard and scroll events are not
+filtered. Actual first-frame timing and pointer behavior require hardware testing.
+
 Use **Pause** whenever needed. **Reconnect Trackpad** retries detection after a
 device change; the app also reconnects after sleep. This MVP uses the system's
 default trackpad, one device at a time. Test with the built-in trackpad first.
@@ -136,6 +166,8 @@ The JSON Lines format contains one JSON object per line, in sequence order:
 - `touch_frame`: native frame number/time, callback uptime, stream generation,
   all raw contact states (including hover/lift states), finger IDs, coordinates,
   velocities, contact shape and `z_total`, plus the recognizer's touching count.
+  `cursor_capture` adds lock/availability state, cancellation feedback, and
+  cumulative suppressed movement/button-event counts since app launch.
   `z_total` is the framework's raw field, not calibrated force.
 - `gesture_result`: action/rejection code and reason, duration, start/end points,
   peak movement, and cancellation state. Action codes: 0 none, 1 left, 2 right,
@@ -143,7 +175,9 @@ The JSON Lines format contains one JSON object per line, in sequence order:
 - `action_result`: attempted or observe-only-suppressed action, message, and
   Accessibility trust status. This separates recognition from window-control errors.
 - `settings`, `recognizer_reset`, `stream_start`, `stream_stop`, `test_marker`,
-  `accessibility_status`, `mouse_down`, and the UI's `message` events.
+  `accessibility_status`, `mouse_down`, `cursor_service`, `cursor_capture`, and the
+  UI's `message` events. Swallowed clicks do not reach the downstream pink-ring
+  monitor; their counts appear in `cursor_capture` instead.
 - `session_end`: normal stop reason. Its absence can indicate an interrupted run.
 
 Every entry includes `schema_version`, a monotonically increasing `sequence`,
@@ -166,15 +200,14 @@ retained until you delete them; this recording feature is intended for testing.
   `MultitouchSupport.framework`. Compatibility is experimental and may change
   with macOS or hardware. If the interface can't load, the menu reports that
   the trackpad is unavailable instead of terminating the app.
-- Normal pointer movement, clicks, and system gestures are not suppressed.
-  Tap-to-click may also click beneath the pointer or change focus. The action
-  targets the focused window when the gesture completes. Try swipe mode if tap
-  mode causes unwanted clicks; input suppression is outside this MVP.
+- Tap mode leaves normal pointer movement and clicks active. Tap-to-click may
+  also click beneath the pointer or change focus. Swipe mode captures input as
+  described above. The action targets the focused window when the gesture ends.
 - Apps can enforce minimum window sizes or refuse Accessibility changes. The
   menu reports rejected or constrained placement. macOS fullscreen windows are
   left alone; exit fullscreen before arranging them.
 - Local ad hoc signing only; no App Store packaging, notarization, auto-update,
-  launch at login, custom bindings, or cursor locking.
+  launch at login or custom bindings.
 
 ## Validation
 
@@ -189,6 +222,10 @@ changes preserve a stable-path tap, while path changes and additional fingers
 still cancel it. Recognition thresholds are unchanged.
 Window-layout tests cover the resize/hide decision, rounding tolerance, moved
 and constrained-size windows, multiple displays, and unchanged left/right actions.
+Cursor-policy tests cover capture, cancellation, expiry, click pairing, normal
+input, and existing drags. Native event tests construct mouse events without
+posting them and check the production filter's suppression decisions. Replay
+tests verify that cancelled capture cannot execute a later window command.
 CI cannot validate physical trackpad input or permissions.
 
 This initial implementation was written in a Linux workspace. Gesture tests can

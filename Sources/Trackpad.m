@@ -1,4 +1,5 @@
 #import "Trackpad.h"
+#import "CursorLock.h"
 #include <dlfcn.h>
 #include <stdint.h>
 
@@ -34,6 +35,7 @@ static __weak Trackpad *activeTrackpad;
     int _touchCount;
     double _lastX, _lastY;
     NSUInteger _generation;
+    NSDictionary *_lastCursorState;
 }
 - (void)consumeFrame:(NSDictionary *)raw generation:(NSUInteger)generation;
 - (void)processContactFrame:(NSDictionary *)raw;
@@ -49,6 +51,8 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
         if (!trackpad) return;
         // Copy scalar values before returning: the framework owns the buffer.
         NSUInteger touchingCount = 0;
+        int path = 0;
+        double x = 0, y = 0;
         NSMutableArray *rawContacts = [NSMutableArray array];
         for (size_t i = 0; i < count; i++) {
             Contact c = contacts[i];
@@ -59,12 +63,15 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
                 @"major_axis": @(c.major), @"minor_axis": @(c.minor), @"angle": @(c.angle) }];
             if (contacts[i].state == 3 || contacts[i].state == 4) {
                 touchingCount++;
+                path = c.path; x = c.normalized.position.x; y = c.normalized.position.y;
             }
         }
         NSUInteger generation = [trackpad generation];
+        NSDictionary *capture = [trackpad.cursorLock updateFrameCount:(int)touchingCount path:path x:x y:y] ?: @{};
         NSDictionary *raw = @{ @"device_timestamp": @(timestamp), @"frame": @(frame),
             @"callback_uptime": @(callbackUptime),
-            @"stream_generation": @(generation), @"contacts": [rawContacts copy], @"touching_count": @(touchingCount) };
+            @"stream_generation": @(generation), @"contacts": [rawContacts copy], @"touching_count": @(touchingCount),
+            @"cursor_capture": capture };
         dispatch_async(dispatch_get_main_queue(), ^{
             [trackpad consumeFrame:raw generation:generation];
         });
@@ -95,10 +102,13 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     activeTrackpad = self;
     _register(_device, receiveFrame);
     if (_start(_device, 0) != 0) { [self stop]; return NO; }
+    [self.cursorLock configureEnabled:_enabled mode:_mode];
     if (self.onEvent) self.onEvent(@"stream_start", @{ @"stream_generation": @(_generation) });
     return YES;
 }
 - (void)stop {
+    [self.cursorLock configureEnabled:NO mode:_mode];
+    [self.cursorLock reset];
     if (_device && self.onEvent) self.onEvent(@"stream_stop", @{ @"stream_generation": @(_generation), @"touching_count": @(_touchCount) });
     activeTrackpad = nil;
     @synchronized (self) { _generation++; }
@@ -114,6 +124,7 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
 }
 - (void)setEnabled:(BOOL)enabled {
     _enabled = enabled;
+    [self.cursorLock configureEnabled:enabled mode:_mode];
     // Cancel a contact already in progress without discarding the next fresh gesture.
     _gesture = (Gesture){ .blocked = _touchCount > 0,
         .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
@@ -121,6 +132,7 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
 }
 - (void)setMode:(GestureMode)mode {
     _mode = mode;
+    [self.cursorLock configureEnabled:_enabled mode:mode];
     _gesture = (Gesture){ .blocked = _touchCount > 0,
         .feedback = _touchCount > 0 ? FeedbackWaitingForLift : FeedbackNone };
     if (self.onEvent) self.onEvent(@"recognizer_reset", @{ @"reason": @"mode_set", @"mode": _mode == ModeTap ? @"tap" : @"swipe", @"touching_count": @(_touchCount) });
@@ -128,6 +140,17 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
 - (void)consumeFrame:(NSDictionary *)raw generation:(NSUInteger)generation {
     if (generation != _generation || !_device) return;
     if (self.onRawFrame) self.onRawFrame(raw);
+    NSDictionary *capture = raw[@"cursor_capture"];
+    if (capture && (![_lastCursorState[@"locked"] isEqual:capture[@"locked"]] ||
+                    ![_lastCursorState[@"cancellation"] isEqual:capture[@"cancellation"]] ||
+                    ![_lastCursorState[@"available"] isEqual:capture[@"available"]])) {
+        _lastCursorState = capture;
+        if (self.onEvent) {
+            NSMutableDictionary *state = [capture mutableCopy];
+            state[@"message"] = [capture[@"locked"] boolValue] ? @"Cursor frozen for edge swipe" : @"Cursor released";
+            self.onEvent(@"cursor_capture", state);
+        }
+    }
     [self processContactFrame:raw];
 }
 // Shared by live input and the recorded-frame regression test. Device lifecycle
@@ -147,6 +170,11 @@ static void receiveFrame(void *device, Contact *contacts, size_t count,
     int identifier = [touch[@"path"] intValue];
     double x = [touch[@"x"] doubleValue], y = [touch[@"y"] doubleValue];
     if (count == 1) { _lastX = x; _lastY = y; }
+    GestureFeedback captureCancellation = [raw[@"cursor_capture"][@"cancellation"] intValue];
+    if (_mode == ModeSwipe && captureCancellation != FeedbackNone) {
+        _gesture.blocked = true;
+        _gesture.feedback = captureCancellation;
+    }
     Gesture before = _gesture;
     EdgeAction action = gestureUpdate(&_gesture, _mode, count, identifier,
                                      count == 0 ? _lastX : x,
